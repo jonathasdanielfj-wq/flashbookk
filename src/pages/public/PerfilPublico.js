@@ -10,7 +10,7 @@ export default function PerfilPublico() {
   const [imagemFocada, setImagemFocada] = useState(null);
   const [indexFoto, setIndexFoto] = useState(0);
   const [verFotoInteira, setVerFotoInteira] = useState(null);
-  const [erro, setErro] = useState(null); // Estado para capturar erros
+  const [erro, setErro] = useState(null);
   const scrollRef = useRef(null);
 
   const [cores, setCores] = useState({
@@ -18,40 +18,40 @@ export default function PerfilPublico() {
     fundo: '#050505',
     card: '#0d0d0d',
     texto: '#ffffff',
-    subtexto: '#666666'
+    subtexto: '#a1a1aa'
   });
 
   useEffect(() => {
     const buscarDados = async () => {
       try {
         setCarregando(true);
-        // 1. Busca o tatuador
+        setErro(null);
+
+        // BUSCA COM ILIKE (Ignora maiúsculas/minúsculas)
         const { data: prof, error: errorProf } = await supabase
           .from('tatuadores')
           .select('*')
-          .eq('username', username)
-          .maybeSingle(); // maybeSingle evita erro se não achar nada
+          .ilike('username', username)
+          .maybeSingle();
 
         if (errorProf) throw errorProf;
         
         if (!prof) {
+          console.error("Nenhum tatuador encontrado com o username:", username);
           setErro("Perfil não encontrado.");
-          setCarregando(false);
           return;
         }
 
         setTatuador(prof);
         
-        // Aplica cores com fallback (importante para não quebrar o estilo)
         setCores({
           primaria: prof.cor_primaria || '#e11d48',
           fundo: prof.cor_fundo || '#050505',
           card: prof.cor_card || '#0d0d0d',
           texto: prof.cor_texto || '#ffffff',
-          subtexto: prof.cor_subtexto || '#666666'
+          subtexto: prof.cor_subtexto || '#a1a1aa' 
         });
 
-        // 2. Busca as artes (usando o ID garantido)
         const { data: listaArtes, error: errorArtes } = await supabase
           .from('artes')
           .select('*')
@@ -63,14 +63,16 @@ export default function PerfilPublico() {
         setArtes(listaArtes || []);
 
       } catch (err) {
-        console.error("Erro ao carregar perfil:", err);
-        setErro("Erro ao carregar dados.");
+        console.error("Erro geral na busca:", err);
+        setErro("Ocorreu um erro ao carregar a página.");
       } finally {
         setCarregando(false);
       }
     };
 
-    if (username) buscarDados();
+    if (username) {
+      buscarDados();
+    }
   }, [username]);
 
   const handleScroll = () => {
@@ -105,7 +107,13 @@ export default function PerfilPublico() {
   if (erro) return (
     <div className="h-screen bg-[#050505] flex flex-col items-center justify-center p-10 text-center">
       <h2 className="text-white font-black uppercase italic mb-4">{erro}</h2>
-      <button onClick={() => window.location.reload()} className="text-[#e11d48] text-[10px] font-black uppercase tracking-widest">Tentar Novamente</button>
+      <p className="text-white/40 text-[10px] uppercase mb-8 italic">Verifique o link ou tente novamente</p>
+      <button 
+        onClick={() => window.location.reload()} 
+        className="px-6 py-3 border border-white/10 rounded-full text-white text-[9px] font-black uppercase tracking-widest active:scale-95 transition-all"
+      >
+        Recarregar Página
+      </button>
     </div>
   );
 
@@ -138,7 +146,6 @@ export default function PerfilPublico() {
       <main className="px-4 grid grid-cols-2 gap-3 max-w-screen-xl mx-auto">
         {artes.map((arte) => {
           const isReservado = arte.vendida === true;
-          // Garante que imagem_url seja tratada corretamente
           const urlImagem = Array.isArray(arte.imagem_url) ? arte.imagem_url[0] : arte.imagem_url;
 
           return (
@@ -168,7 +175,7 @@ export default function PerfilPublico() {
                 <div className="absolute bottom-3 left-3 px-3 py-1.5 bg-black/40 backdrop-blur-md border border-white/10 rounded-full">
                   <p className="text-[8px] font-black uppercase tracking-widest">
                     {isReservado ? (
-                      <span style={{ color: cores.subtexto }} className="line-through opacity-50">Indisponível</span>
+                      <span style={{ color: cores.subtexto }} className="line-through opacity-70">Indisponível</span>
                     ) : (
                       <span style={{ color: cores.primaria }}>{arte.preco}</span>
                     )}
@@ -177,7 +184,7 @@ export default function PerfilPublico() {
               </div>
               
               {!isReservado && (
-                <p style={{ color: cores.texto }} className="mt-2 ml-2 text-[9px] font-black uppercase tracking-tighter italic opacity-80">
+                <p style={{ color: cores.texto }} className="mt-2 ml-2 text-[9px] font-black uppercase tracking-tighter italic opacity-90">
                   {arte.titulo}
                 </p>
               )}
@@ -228,7 +235,7 @@ export default function PerfilPublico() {
                       <h2 style={{ color: cores.texto }} className="text-xl font-black italic uppercase tracking-tighter leading-none mb-1">
                         {imagemFocada?.titulo}
                       </h2>
-                      <p style={{ color: cores.subtexto }} className="font-bold text-[9px] tracking-[0.2em] uppercase opacity-60">
+                      <p style={{ color: cores.subtexto }} className="font-bold text-[9px] tracking-[0.2em] uppercase">
                         Referência disponível • {imagemFocada?.preco}
                       </p>
                   </div>
