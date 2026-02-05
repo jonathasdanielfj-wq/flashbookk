@@ -27,7 +27,6 @@ export default function PerfilPublico() {
         setCarregando(true);
         setErro(null);
 
-        // BUSCA COM ILIKE (Ignora maiúsculas/minúsculas)
         const { data: prof, error: errorProf } = await supabase
           .from('tatuadores')
           .select('*')
@@ -37,7 +36,6 @@ export default function PerfilPublico() {
         if (errorProf) throw errorProf;
         
         if (!prof) {
-          console.error("Nenhum tatuador encontrado com o username:", username);
           setErro("Perfil não encontrado.");
           return;
         }
@@ -91,11 +89,18 @@ export default function PerfilPublico() {
   const abrirOrcamentoComArte = (e, arte) => {
     e.stopPropagation();
     if (!tatuador?.whatsapp) return alert("WhatsApp não configurado.");
+    
     const numeroLimpo = tatuador.whatsapp.replace(/\D/g, "");
-    const fotos = Array.isArray(arte?.imagem_url) ? arte.imagem_url : [arte?.imagem_url];
-    const urlArte = fotos[indexFoto] || fotos[0];
-    const mensagem = encodeURIComponent(`Olá @${username}! Vi seu portfólio e quero orçar: ${arte?.titulo}\nRef: ${urlArte}`);
-    window.open(`https://wa.me/${numeroLimpo}?text=${mensagem}`, '_blank');
+    const tituloArte = arte?.titulo || "Arte sem título";
+    const precoArte = arte?.preco || "Sob consulta";
+    
+    const textoMensagem = `Olá @${username}! Vi seu portfólio e fiquei interessado nesta arte:\n\n` +
+                          `🎨 *PROJETO:* ${tituloArte}\n` +
+                          `💰 *VALOR:* ${precoArte}\n\n` +
+                          `Ainda está disponível para agendamento?`;
+
+    const mensagemUrl = encodeURIComponent(textoMensagem);
+    window.open(`https://wa.me/${numeroLimpo}?text=${mensagemUrl}`, '_blank');
   };
 
   if (carregando) return (
@@ -146,7 +151,13 @@ export default function PerfilPublico() {
       <main className="px-4 grid grid-cols-2 gap-3 max-w-screen-xl mx-auto">
         {artes.map((arte) => {
           const isReservado = arte.vendida === true;
-          const urlImagem = Array.isArray(arte.imagem_url) ? arte.imagem_url[0] : arte.imagem_url;
+          
+          // Tenta pegar a primeira imagem do carrossel para a capa, se não houver, usa imagem_url
+          const fotosCapa = Array.isArray(arte.imagens_carrossel) && arte.imagens_carrossel.length > 0
+            ? arte.imagens_carrossel
+            : Array.isArray(arte.imagem_url) ? arte.imagem_url : [arte.imagem_url];
+            
+          const urlImagem = fotosCapa[0];
 
           return (
             <div 
@@ -164,6 +175,13 @@ export default function PerfilPublico() {
                   alt={arte.titulo} 
                 />
                 
+                {/* Indicador de múltiplas fotos */}
+                {Array.isArray(arte.imagens_carrossel) && arte.imagens_carrossel.length > 1 && (
+                  <div className="absolute top-3 left-3 bg-black/50 backdrop-blur-sm px-2 py-1 rounded-md border border-white/10">
+                    <p className="text-[7px] text-white font-bold uppercase">+{arte.imagens_carrossel.length - 1} fotos</p>
+                  </div>
+                )}
+
                 <div className="absolute top-3 right-4 drop-shadow-[0_2px_3px_rgba(0,0,0,0.9)]">
                   {isReservado ? (
                     <span className="text-[7px] font-black uppercase tracking-widest text-[#e11d48] italic">Reservado</span>
@@ -194,7 +212,26 @@ export default function PerfilPublico() {
       </main>
 
       {imagemFocada && (() => {
-        const fotos = Array.isArray(imagemFocada.imagem_url) ? imagemFocada.imagem_url : [imagemFocada.imagem_url];
+        // LÓGICA DE EXTRAÇÃO PARA IMAGENS_CARROSSEL
+        let fotos = [];
+        const fonteImagens = imagemFocada.imagens_carrossel || imagemFocada.imagem_url;
+
+        if (Array.isArray(fonteImagens)) {
+            fotos = fonteImagens;
+        } else if (typeof fonteImagens === 'string') {
+            if (fonteImagens.startsWith('[')) {
+                try {
+                    fotos = JSON.parse(fonteImagens);
+                } catch (e) {
+                    fotos = [fonteImagens];
+                }
+            } else {
+                fotos = [fonteImagens];
+            }
+        }
+
+        // Filtra URLs vazias por segurança
+        fotos = fotos.filter(url => url && typeof url === 'string');
         
         return (
           <div 
@@ -210,14 +247,37 @@ export default function PerfilPublico() {
                 <div 
                   ref={scrollRef}
                   onScroll={handleScroll}
-                  className="flex overflow-x-auto snap-x snap-mandatory scrollbar-hide h-full w-full no-scrollbar"
+                  className="flex overflow-x-auto snap-x snap-mandatory h-full w-full no-scrollbar"
+                  style={{ 
+                    scrollSnapType: 'x mandatory', 
+                    display: 'flex',
+                    overflowY: 'hidden'
+                  }}
                 >
                   {fotos.map((url, i) => (
-                    <div key={i} className="min-w-full h-full snap-center">
-                      <img src={url} className="w-full h-full object-cover" alt="" />
+                    <div 
+                        key={i} 
+                        className="min-w-full w-full h-full snap-center flex-shrink-0"
+                    >
+                      <img 
+                        src={url} 
+                        className="w-full h-full object-cover pointer-events-none" 
+                        alt="" 
+                      />
                     </div>
                   ))}
                 </div>
+
+                {fotos.length > 1 && (
+                  <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex gap-1.5 z-20 bg-black/20 px-2 py-1 rounded-full backdrop-blur-sm">
+                    {fotos.map((_, i) => (
+                      <div 
+                        key={i} 
+                        className={`h-1 rounded-full transition-all duration-300 ${i === indexFoto ? 'w-4 bg-white' : 'w-1 bg-white/40'}`}
+                      />
+                    ))}
+                  </div>
+                )}
 
                 <button 
                   onClick={() => setVerFotoInteira(fotos[indexFoto] || fotos[0])}
