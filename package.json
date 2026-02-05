@@ -5,15 +5,15 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
     "autoprefixer": "^10.4.17",
+    "framer-motion": "10.16.4",
     "postcss": "^8.4.35",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-easy-crop": "^5.5.6",
-    "react-image-crop": "^11.0.10",
     "react-router-dom": "^6.21.0",
     "react-scripts": "5.0.1",
-    "recharts": "^3.7.0",
-    "swiper": "^12.1.0",
+    "recharts": "^2.10.3",
+    "swiper": "^11.0.5",
     "tailwindcss": "^3.4.1"
   },
   "scripts": {

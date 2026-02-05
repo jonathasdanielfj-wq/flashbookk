@@ -2,13 +2,43 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  margin: 0;
-  background-color: #0a0a0a;
-  -webkit-font-smoothing: antialiased;
+/* RESET E PREVENÇÃO DE ZOOM */
+@layer base {
+  body {
+    margin: 0;
+    background-color: #0a0a0a;
+    -webkit-font-smoothing: antialiased;
+    /* Impede que o iOS mude o tamanho do texto sozinho ao girar a tela */
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* Força todos os campos de texto a terem 16px no mobile.
+     Isso engana o navegador e impede o zoom automático. 
+  */
+  input, 
+  textarea, 
+  select {
+    font-size: 16px !important;
+  }
+
+  /* Opcional: Se você quiser que o texto pareça menor visualmente 
+     mesmo tendo 16px para o sistema, usamos scale. Mas geralmente 
+     apenas os 16px já resolvem sem quebrar o design.
+  */
 }
 
 input:focus {
   outline: none;
   border-color: #e11d48;
+}
+
+/* Esconde a barra de rolagem em elementos com a classe .no-scrollbar */
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
 }

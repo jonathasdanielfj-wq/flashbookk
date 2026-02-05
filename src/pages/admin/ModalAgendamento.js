@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { supabase } from '../../supabaseClient';
 
 export default function ModalAgendamento({ aberto, fechar, arte, aoSucesso, setErroModal }) {
@@ -13,12 +13,14 @@ export default function ModalAgendamento({ aberto, fechar, arte, aoSucesso, setE
   const scrollHoraRef = useRef(null);
   const scrollMinutoRef = useRef(null);
 
-  // Gerar 120 dias (4 meses) para o carrossel
-  const dias = Array.from({ length: 120 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() + i);
-    return d;
-  });
+  // Gerar dias usando useMemo
+  const dias = useMemo(() => {
+    return Array.from({ length: 120 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      return d;
+    });
+  }, []);
 
   const aplicarMascaraWhatsapp = (v) => {
     v = v.replace(/\D/g, "");
@@ -54,10 +56,9 @@ export default function ModalAgendamento({ aberto, fechar, arte, aoSucesso, setE
     setEnviando(true);
     try {
       const dataFinal = new Date(dataSelecionada);
-      dataFinal.setHours(parseInt(hora), parseInt(minuto), 0);
+      dataFinal.setHours(parseInt(hora), parseInt(minuto), 0, 0);
 
-      // 1. Salva o agendamento
-      const { error } = await supabase.from('agendamentos').insert([{
+      const { error: errorAgendamento } = await supabase.from('agendamentos').insert([{
         tatuador_id: arte.tatuador_id,
         arte_id: arte.id,
         cliente_nome: nome.toUpperCase(),
@@ -65,21 +66,25 @@ export default function ModalAgendamento({ aberto, fechar, arte, aoSucesso, setE
         data_hora: dataFinal.toISOString()
       }]);
 
-      if (error) throw error;
+      if (errorAgendamento) throw errorAgendamento;
       
-      // 2. Marca a arte como vendida
-      await supabase.from('artes').update({ vendida: true }).eq('id', arte.id);
+      const { error: errorArte } = await supabase
+        .from('artes')
+        .update({ vendida: true })
+        .eq('id', arte.id);
       
-      // 3. FLUXO DIRETO: Notifica o pai (Dashboard/Feed) e fecha o modal
-      // Isso fará com que o pop-up de "Arte Publicada" (ou reservada) apareça na tela de início
+      if (errorArte) throw errorArte;
+      
+      setNome('');
+      setWhatsapp('');
       aoSucesso(); 
       fechar(); 
 
     } catch (err) {
-      console.error(err);
+      console.error("Erro no agendamento:", err);
       setErroModal({ 
         aberto: true, 
-        mensagem: "Ocorreu um erro ao processar o agendamento." 
+        mensagem: "Erro ao processar o agendamento. Tente novamente." 
       });
     } finally {
       setEnviando(false);
@@ -99,10 +104,10 @@ export default function ModalAgendamento({ aberto, fechar, arte, aoSucesso, setE
         {/* HEADER */}
         <div className="pt-8 px-8 pb-4 flex justify-between items-end">
           <div>
-            <span className="text-[#e11d48] text-[7px] font-black uppercase tracking-[0.3em] italic">Nova Reserva</span>
-            <h2 className="text-xl font-black italic uppercase tracking-tighter leading-none">Agendar<span className="text-[#e11d48]">.</span></h2>
+            <span className="text-[#e11d48] text-[7px] font-black uppercase tracking-[0.3em] italic block mb-1">Nova Reserva</span>
+            <h2 className="text-xl font-black italic uppercase tracking-tighter leading-none text-white">Agendar<span className="text-[#e11d48]">.</span></h2>
           </div>
-          <button onClick={fechar} type="button" className="text-white/20 mb-1 hover:text-white transition-colors">
+          <button onClick={fechar} type="button" className="text-white/20 mb-1 hover:text-white transition-colors active:scale-90 p-2">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 6L6 18M6 6l12 12"/></svg>
           </button>
         </div>
@@ -173,24 +178,25 @@ export default function ModalAgendamento({ aberto, fechar, arte, aoSucesso, setE
               </div>
           </div>
 
-          {/* INPUTS */}
+          {/* INPUTS - AJUSTADOS COM TEXT-16PX PARA EVITAR ZOOM MOBILE */}
           <div className="space-y-3">
               <input 
                   placeholder="NOME DO CLIENTE"
                   value={nome}
                   onChange={(e) => setNome(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-[10px] font-black uppercase tracking-[0.2em] outline-none focus:border-white/20 transition-all placeholder:text-white/10 italic"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 text-[16px] font-black uppercase tracking-[0.1em] outline-none focus:border-white/20 transition-all placeholder:text-white/10 italic text-white"
               />
               <input 
                   placeholder="WHATSAPP"
                   value={whatsapp}
                   inputMode="tel"
                   onChange={(e) => setWhatsapp(aplicarMascaraWhatsapp(e.target.value))}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-[10px] font-black uppercase tracking-[0.2em] outline-none focus:border-white/20 transition-all placeholder:text-white/10 italic"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 text-[16px] font-black uppercase tracking-[0.1em] outline-none focus:border-white/20 transition-all placeholder:text-white/10 italic text-white"
               />
           </div>
 
           <button 
+            type="submit"
             disabled={enviando}
             className="w-full bg-[#e11d48] text-white py-5 rounded-[28px] font-black uppercase text-[10px] tracking-[0.3em] shadow-[0_15px_30px_rgba(225,29,72,0.2)] active:scale-95 transition-all disabled:opacity-30 italic"
           >

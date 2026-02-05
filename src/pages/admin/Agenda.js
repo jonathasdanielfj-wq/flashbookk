@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Agenda({ user, voltar, aoAtualizar }) {
   const [agendamentos, setAgendamentos] = useState([]);
@@ -7,15 +8,11 @@ export default function Agenda({ user, voltar, aoAtualizar }) {
   const [dataSelecionada, setDataSelecionada] = useState(null);
   const [exibirCalendario, setExibirCalendario] = useState(false);
   
-  const [arteFocada, setArteFocada] = useState(null);
-  const [indexFoto, setIndexFoto] = useState(0);
-  const scrollRef = useRef(null);
-
+  const [detalheAgendamento, setDetalheAgendamento] = useState(null);
   const [editando, setEditando] = useState(null);
   const [excluindo, setExcluindo] = useState(null);
   const [finalizando, setFinalizando] = useState(null);
-  const [valorManual, setValorManual] = useState(""); // Novo estado para valor manual
-  const [perguntarVitrine, setPerguntarVitrine] = useState(null); 
+  const [valorManual, setValorManual] = useState("");
   const [formEdit, setFormEdit] = useState({ cliente_nome: '', cliente_whatsapp: '', data_hora: '' });
 
   useEffect(() => {
@@ -25,15 +22,11 @@ export default function Agenda({ user, voltar, aoAtualizar }) {
   const buscarAgendamentos = async () => {
     try {
       setCarregando(true);
+      // Removida a coluna 'imagens_adicionais' que causava o erro 400
       const { data, error } = await supabase
         .from('agendamentos')
         .select(`
-          id,
-          cliente_nome,
-          cliente_whatsapp,
-          data_hora,
-          tatuador_id,
-          arte_id,
+          id, cliente_nome, cliente_whatsapp, data_hora, tatuador_id, arte_id,
           artes (id, titulo, preco, imagem_url)
         `)
         .eq('tatuador_id', user.id)
@@ -48,411 +41,230 @@ export default function Agenda({ user, voltar, aoAtualizar }) {
     }
   };
 
-  const confirmarFinalizacao = async () => {
-    const ag = finalizando;
-    try {
-      let precoFinal = 0;
-
-      // Se existe valor manual digitado, usa ele. Se não, tenta limpar o da arte.
-      if (valorManual) {
-        precoFinal = parseFloat(valorManual.replace(',', '.'));
-      } else if (ag.artes?.preco) {
-        const stringPreco = String(ag.artes.preco);
-        precoFinal = parseFloat(stringPreco.replace(/[^\d,.-]/g, '').replace(',', '.'));
-      }
-
-      if (isNaN(precoFinal) || precoFinal <= 0) {
-        alert("Por favor, insira um valor válido para a tattoo.");
-        return;
-      }
-
-      // 1. Insere na tabela de finanças
-      const { error: finError } = await supabase
-        .from('financas')
-        .insert([{
-          tatuador_id: user.id,
-          tipo: 'ganho',
-          valor: precoFinal,
-          descricao: `TATTOO: ${ag.cliente_nome.toUpperCase()} - ${ag.artes?.titulo?.toUpperCase() || 'SEM TÍTULO'}`
-        }]);
-
-      if (finError) throw finError;
-
-      // 2. Remove da agenda
-      const { error: agError } = await supabase
-        .from('agendamentos')
-        .delete()
-        .eq('id', ag.id);
-
-      if (agError) throw agError;
-
-      setFinalizando(null);
-      setValorManual("");
-      buscarAgendamentos();
-      if (aoAtualizar) aoAtualizar(); 
-    } catch (err) {
-      console.error("Erro detalhado:", err);
-      alert("Erro ao finalizar agendamento.");
-    }
-  };
-
-  const abrirWpp = (ag) => {
-    let numero = ag.cliente_whatsapp?.replace(/\D/g, "");
-    if (!numero) {
-      alert("WhatsApp não encontrado.");
-      return;
-    }
-    if (numero.length <= 11) numero = "55" + numero;
-    const mensagem = encodeURIComponent(`Olá ${ag.cliente_nome}! Aqui é o seu tatuador. Estou passando para confirmar nosso agendamento da arte "${ag.artes?.titulo}". Podemos confirmar?`);
-    window.open(`https://wa.me/${numero}?text=${mensagem}`, '_blank');
-  };
-
-  const salvarEdicao = async () => {
-    try {
-      const { error } = await supabase
-        .from('agendamentos')
-        .update({ 
-          cliente_nome: formEdit.cliente_nome.toUpperCase(),
-          cliente_whatsapp: formEdit.cliente_whatsapp.replace(/\D/g, ""),
-          data_hora: formEdit.data_hora 
-        })
-        .eq('id', editando.id);
-
-      if (error) throw error;
-      setEditando(null);
-      buscarAgendamentos();
-    } catch (err) {
-      alert("Erro ao atualizar.");
-    }
-  };
-
-  const confirmarExclusaoAgendamento = async () => {
-    const agParaDeletar = excluindo;
-    try {
-      const { error } = await supabase
-        .from('agendamentos')
-        .delete()
-        .eq('id', agParaDeletar.id);
-
-      if (error) throw error;
-      
-      setExcluindo(null);
-      setPerguntarVitrine(agParaDeletar.artes); 
-      buscarAgendamentos();
-    } catch (err) {
-      alert("Erro ao excluir.");
-    }
-  };
-
-  const voltarArteParaVitrine = async (arteId, status) => {
-    if (status === 'sim' && arteId) {
-      try {
-        const { error } = await supabase
-          .from('artes')
-          .update({ vendida: false })
-          .eq('id', arteId);
-        
-        if (error) throw error;
-        if (aoAtualizar) aoAtualizar(); 
-      } catch (err) {
-        console.error("Erro ao voltar para vitrine:", err);
-      }
-    }
-    setPerguntarVitrine(null);
-  };
-
-  const lidarComVoltar = () => {
-    if (exibirCalendario || dataSelecionada) {
-      setExibirCalendario(false);
-      setDataSelecionada(null);
-    } else {
-      voltar(); 
-    }
-  };
-
-  const handleScroll = () => {
-    if (scrollRef.current) {
-      const { scrollLeft, offsetWidth } = scrollRef.current;
-      const index = Math.round(scrollLeft / offsetWidth);
-      setIndexFoto(index);
-    }
-  };
-
-  const baixarImagem = async (url, nome) => {
+  const baixarImagem = async (url, nomeArquivo) => {
     try {
       const response = await fetch(url);
       const blob = await response.blob();
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `arte-${nome || 'tattoo'}.jpg`;
+      link.download = `${nomeArquivo || 'tattoo'}.jpg`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-    } catch (error) {
-      console.error("Erro ao baixar:", error);
+    } catch (err) { console.error(err); }
+  };
+
+  const confirmarFinalizacao = async () => {
+    const ag = finalizando;
+    try {
+      let precoFinal = valorManual ? parseFloat(valorManual.replace(',', '.')) : (ag.artes?.preco ? parseFloat(String(ag.artes.preco).replace(/[^\d,.-]/g, '').replace(',', '.')) : 0);
+      
+      await supabase.from('financas').insert([{
+        tatuador_id: user.id,
+        tipo: 'ganho',
+        valor: precoFinal,
+        descricao: `TATTOO: ${ag.cliente_nome.toUpperCase()} - ${ag.artes?.titulo?.toUpperCase() || 'SEM TÍTULO'}`
+      }]);
+
+      await supabase.from('agendamentos').delete().eq('id', ag.id);
+      setFinalizando(null); setDetalheAgendamento(null);
+      buscarAgendamentos();
+      if (aoAtualizar) aoAtualizar(); 
+    } catch (err) { console.error(err); }
+  };
+
+  const confirmarExclusaoAgendamento = async () => {
+    try {
+      await supabase.from('agendamentos').delete().eq('id', excluindo.id);
+      setExcluindo(null); setDetalheAgendamento(null);
+      buscarAgendamentos();
+    } catch (err) { console.error(err); }
+  };
+
+  const salvarEdicao = async () => {
+    try {
+      await supabase.from('agendamentos').update({ 
+          cliente_nome: formEdit.cliente_nome.toUpperCase(),
+          cliente_whatsapp: formEdit.cliente_whatsapp.replace(/\D/g, ""),
+          data_hora: formEdit.data_hora 
+        }).eq('id', editando.id);
+      setEditando(null); setDetalheAgendamento(null);
+      buscarAgendamentos();
+    } catch (err) { console.error(err); }
+  };
+
+  const renderCalendarioGrade = () => {
+    const hoje = new Date();
+    const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    const ultimoDiaMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
+    const dias = [];
+
+    for (let i = 0; i < primeiroDiaMes.getDay(); i++) {
+      dias.push(<div key={`empty-${i}`} className="h-12" />);
     }
+
+    for (let d = 1; d <= ultimoDiaMes.getDate(); d++) {
+      const temTattoo = agendamentos.some(ag => {
+        const da = new Date(ag.data_hora);
+        return da.getDate() === d && da.getMonth() === hoje.getMonth() && da.getFullYear() === hoje.getFullYear();
+      });
+
+      dias.push(
+        <button 
+          key={d}
+          onClick={() => {
+            setDataSelecionada(new Date(hoje.getFullYear(), hoje.getMonth(), d));
+            setExibirCalendario(false);
+          }}
+          className="h-12 w-full rounded-xl flex flex-col items-center justify-center relative bg-white/5 active:bg-[#e11d48]/20 transition-all"
+        >
+          <span className="text-xs font-black text-white/60">{d}</span>
+          {temTattoo && <div className="w-1.5 h-1.5 rounded-full mt-1 bg-[#e11d48] shadow-[0_0_8px_#e11d48]" />}
+        </button>
+      );
+    }
+    return dias;
   };
 
-  const getDiasNoMes = (baseDate) => {
-    const data = baseDate || new Date();
-    const ano = data.getFullYear();
-    const mes = data.getMonth();
-    const dias = new Date(ano, mes + 1, 0).getDate();
-    return Array.from({ length: dias }, (_, i) => new Date(ano, mes, i + 1));
-  };
-
-  const diasDoMes = getDiasNoMes(dataSelecionada);
   const agendamentosExibidos = dataSelecionada 
-    ? agendamentos.filter(ag => new Date(ag.data_hora).toDateString() === dataSelecionada.toDateString())
+    ? agendamentos.filter(ag => {
+        const d = new Date(ag.data_hora);
+        return d.getDate() === dataSelecionada.getDate() && d.getMonth() === dataSelecionada.getMonth();
+      })
     : agendamentos;
 
-  const temAgendamentoNoDia = (date) => {
-    return agendamentos.some(ag => new Date(ag.data_hora).toDateString() === date.toDateString());
-  };
-
-  // Verifica se a arte tem um preço válido definido
-  const temPrecoDefinido = (ag) => {
-    if (!ag?.artes?.preco) return false;
-    const p = String(ag.artes.preco).toLowerCase();
-    return !p.includes("consulta") && !p.includes("valor") && p.replace(/[^\d]/g, '').length > 0;
-  };
-
   return (
-    <div className="min-h-screen bg-[#050505] text-white font-sans p-6 pb-32 animate-in fade-in duration-500">
-      
-      {/* HEADER */}
-      <header className="flex items-center justify-between mb-10 pt-8">
-        <button onClick={lidarComVoltar} className="w-12 h-12 bg-white/5 border border-white/10 rounded-full flex items-center justify-center active:scale-90 transition-all group">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="group-hover:text-[#e11d48] transition-colors"><path d="m15 18-6-6 6-6"/></svg>
-        </button>
-        <div className="text-center">
-            <span className="text-[#e11d48] text-[7px] font-black uppercase tracking-[0.4em] italic">Timeline</span>
-            <h1 className="text-2xl font-black italic uppercase tracking-tighter leading-none">Agenda<span className="text-[#e11d48]">.</span></h1>
-        </div>
-        <button onClick={() => { setExibirCalendario(!exibirCalendario); if (exibirCalendario) setDataSelecionada(null); }} 
-            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all border ${exibirCalendario ? 'bg-[#e11d48] border-[#e11d48] shadow-[0_0_20px_rgba(225,29,72,0.4)]' : 'bg-white/5 border-white/10'}`}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
-        </button>
-      </header>
-
-      {/* CALENDÁRIO */}
-      {exibirCalendario && (
-        <div className="mb-10 animate-in slide-in-from-top-4 duration-300">
-          <div className="bg-[#0d0d0d] border border-white/10 rounded-[35px] p-6 shadow-2xl">
-            <div className="flex justify-between items-center mb-6 px-2">
-                <span className="text-[10px] font-black uppercase tracking-widest italic text-white">{(dataSelecionada || new Date()).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</span>
-                {dataSelecionada && <button onClick={() => setDataSelecionada(null)} className="text-[8px] font-black uppercase text-[#e11d48] tracking-widest">Limpar Filtro</button>}
-            </div>
-            <div className="grid grid-cols-7 gap-2">
-                {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map(d => <div key={d} className="text-[8px] font-black text-white/10 text-center mb-2">{d}</div>)}
-                {diasDoMes.map((dia, idx) => {
-                    const ativo = dataSelecionada && dia.toDateString() === dataSelecionada.toDateString();
-                    const temMarcacao = temAgendamentoNoDia(dia);
-                    return (
-                        <button key={idx} onClick={() => setDataSelecionada(dia)} className={`relative aspect-square rounded-2xl flex items-center justify-center text-[10px] font-bold transition-all ${ativo ? 'bg-white text-black' : 'hover:bg-white/5 text-white/40'}`}>
-                            {dia.getDate()}
-                            {temMarcacao && <span className={`absolute bottom-1.5 w-1 h-1 rounded-full animate-pulse ${ativo ? 'bg-red-600' : 'bg-[#e11d48]'}`}></span>}
-                        </button>
-                    );
-                })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* LISTA */}
-      <div className="space-y-4">
-        {carregando ? (
-            <div className="py-20 flex justify-center italic text-[10px] text-white/10 tracking-widest animate-pulse">Sincronizando...</div>
-        ) : agendamentosExibidos.length === 0 ? (
-            <div className="py-20 bg-white/5 rounded-[40px] border border-dashed border-white/10 flex flex-col items-center justify-center">
-                <p className="text-[10px] font-black uppercase tracking-widest text-white/20">{dataSelecionada ? 'Nenhum horário para este dia' : 'Agenda vazia'}</p>
-            </div>
-        ) : (
-            agendamentosExibidos.map((ag) => {
-                const dataAg = new Date(ag.data_hora);
-                return (
-                    <div key={ag.id} className="bg-[#0d0d0d] border border-white/10 rounded-[32px] p-5 flex flex-col gap-4 group transition-all">
-                        <div className="flex items-center gap-5">
-                          <div className="flex flex-col items-center justify-center border-r border-white/10 pr-5 min-w-[70px]">
-                              <span className="text-[8px] font-black text-[#e11d48] uppercase tracking-tighter mb-1">{dataAg.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')}</span>
-                              <span className="text-xl font-black italic tracking-tighter leading-none">{dataAg.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                              <span className="text-[#e11d48] text-[7px] font-black uppercase tracking-widest block mb-0.5">Cliente</span>
-                              <h4 className="text-[13px] font-black uppercase truncate italic leading-tight">{ag.cliente_nome}</h4>
-                              <p className="text-[9px] text-white/40 font-bold uppercase tracking-tight truncate">{ag.artes?.titulo}</p>
-                          </div>
-                          <div onClick={() => setArteFocada(ag.artes)} className="w-12 h-12 rounded-2xl overflow-hidden border border-white/10 shrink-0 cursor-pointer active:scale-90 transition-transform">
-                              <img src={Array.isArray(ag.artes?.imagem_url) ? ag.artes?.imagem_url[0] : ag.artes?.imagem_url} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all" alt="Arte" />
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col gap-2 pt-2 border-t border-white/5">
-                          <button 
-                            onClick={() => { setFinalizando(ag); setValorManual(""); }}
-                            className="w-full bg-white text-black h-12 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 shadow-[0_5px_15px_rgba(255,255,255,0.1)]"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5"><path d="M20 6 9 17l-5-5"/></svg>
-                            <span className="text-[9px] font-black uppercase tracking-[0.2em]">Finalizar Tattoo</span>
-                          </button>
-
-                          <div className="flex gap-2">
-                            <button onClick={() => abrirWpp(ag)} className="flex-1 bg-[#25D366]/10 hover:bg-[#25D366] text-[#25D366] hover:text-black h-10 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-                              <span className="text-[8px] font-black uppercase tracking-widest">Wpp</span>
-                            </button>
-                            
-                            <button onClick={() => { setEditando(ag); setFormEdit({ cliente_nome: ag.cliente_nome, cliente_whatsapp: ag.cliente_whatsapp || '', data_hora: ag.data_hora.slice(0, 16) }); }}
-                              className="flex-1 bg-white/5 hover:bg-white hover:text-black text-white/40 h-10 rounded-xl flex items-center justify-center transition-all active:scale-95">
-                              <span className="text-[8px] font-black uppercase tracking-widest">Editar</span>
-                            </button>
-
-                            <button onClick={() => setExcluindo(ag)}
-                              className="w-10 bg-white/5 hover:bg-[#e11d48]/20 text-white/20 hover:text-[#e11d48] h-10 rounded-xl flex items-center justify-center transition-all active:scale-95">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                            </button>
-                          </div>
-                        </div>
-                    </div>
-                );
-            })
-        )}
-      </div>
-
-      {/* POP-UP DE FINALIZAÇÃO (COM CAMPO DE VALOR SE NECESSÁRIO) */}
-      {finalizando && (
-        <div className="fixed inset-0 bg-black/95 z-[9999] flex items-center justify-center p-6 backdrop-blur-md animate-in fade-in">
-          <div className="w-full max-w-[300px] bg-[#0d0d0d] rounded-[40px] border border-white/10 p-8 shadow-2xl animate-in zoom-in-95 text-center">
-            <div className="w-16 h-16 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-green-500/20">
-              <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="4"><path d="M20 6 9 17l-5-5"/></svg>
-            </div>
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-green-500 mb-2">Concluir Serviço</p>
-            <h3 className="text-sm font-black italic uppercase tracking-tighter mb-4 leading-tight">Deseja finalizar o agendamento de {finalizando.cliente_nome}?</h3>
-            
-            {temPrecoDefinido(finalizando) ? (
-              <p className="text-[9px] text-white/30 font-bold uppercase tracking-widest mb-8 leading-relaxed">
-                  Isso lançará um ganho de <span className="text-white">{finalizando.artes?.preco}</span> no seu financeiro.
-              </p>
-            ) : (
-              <div className="mb-8">
-                <p className="text-[9px] text-[#e11d48] font-black uppercase tracking-widest mb-3 italic">Qual o valor final da tattoo?</p>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-white/20">R$</span>
-                  <input 
-                    type="number" 
-                    value={valorManual}
-                    onChange={(e) => setValorManual(e.target.value)}
-                    placeholder="0,00"
-                    className="w-full bg-white/5 border border-white/10 h-14 rounded-2xl pl-10 pr-4 text-[14px] font-black text-white outline-none focus:border-green-500 transition-all"
-                  />
-                </div>
+    <div className="min-h-screen bg-[#050505] text-white font-sans overflow-x-hidden relative">
+      <AnimatePresence mode="wait">
+        {!detalheAgendamento ? (
+          <motion.div key="lista" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="p-6">
+            <header className="flex items-center justify-between mb-8 pt-8">
+              <button onClick={voltar} className="w-12 h-12 bg-white/5 border border-white/10 rounded-full flex items-center justify-center active:scale-90 transition-all">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="m15 18-6-6 6-6"/></svg>
+              </button>
+              <div className="text-center">
+                  <h1 className="text-2xl font-black italic uppercase tracking-tighter">Agenda<span className="text-[#e11d48]">.</span></h1>
+                  <button onClick={() => setDataSelecionada(null)} className="text-[7px] font-black text-[#e11d48] uppercase tracking-[0.3em] bg-rose-500/10 px-2 py-1 rounded-full">
+                    {dataSelecionada ? "Limpar Filtro" : "Todos os Horários"}
+                  </button>
               </div>
+              <button onClick={() => setExibirCalendario(!exibirCalendario)} className={`w-12 h-12 rounded-full flex items-center justify-center border transition-all ${exibirCalendario ? 'bg-[#e11d48] border-[#e11d48]' : 'bg-white/5 border-white/10'}`}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+              </button>
+            </header>
+
+            {exibirCalendario && (
+              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="mb-8 bg-[#0d0d0d] rounded-[32px] p-6 border border-white/5 shadow-2xl">
+                <div className="grid grid-cols-7 gap-2 text-center mb-4">
+                  {['D','S','T','Q','Q','S','S'].map(d => <span key={d} className="text-[10px] font-black text-white/20">{d}</span>)}
+                </div>
+                <div className="grid grid-cols-7 gap-2">{renderCalendarioGrade()}</div>
+              </motion.div>
             )}
 
             <div className="space-y-3">
-              <button onClick={confirmarFinalizacao} className="w-full bg-green-600 text-white h-14 rounded-2xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all shadow-[0_10px_20px_rgba(34,197,94,0.2)]">Confirmar e Lançar</button>
-              <button onClick={() => { setFinalizando(null); setValorManual(""); }} className="w-full bg-white/5 text-white/30 h-12 rounded-2xl text-[9px] font-black uppercase tracking-widest">Agora não</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL DE EDIÇÃO */}
-      {editando && (
-        <div className="fixed inset-0 bg-black/95 z-[9999] flex items-center justify-center p-6 backdrop-blur-md animate-in fade-in" onClick={() => setEditando(null)}>
-          <div className="w-full max-w-[320px] bg-[#0d0d0d] rounded-[35px] border border-white/10 p-8 shadow-2xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
-            <div className="text-center mb-8">
-              <span className="text-[#e11d48] text-[7px] font-black uppercase tracking-[0.4em] italic mb-2 block">Management</span>
-              <h2 className="text-xl font-black italic uppercase tracking-tighter">Editar Dados</h2>
-            </div>
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-[8px] font-black uppercase text-white/30 ml-2">Cliente</label>
-                <input type="text" value={formEdit.cliente_nome} onChange={e => setFormEdit({...formEdit, cliente_nome: e.target.value})}
-                  className="w-full bg-white/5 border border-white/10 h-14 rounded-2xl px-5 text-[11px] font-bold uppercase text-white outline-none focus:border-[#e11d48]" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[8px] font-black uppercase text-white/30 ml-2">WhatsApp</label>
-                <input type="text" value={formEdit.cliente_whatsapp} onChange={e => setFormEdit({...formEdit, cliente_whatsapp: e.target.value})}
-                  className="w-full bg-white/5 border border-white/10 h-14 rounded-2xl px-5 text-[11px] font-bold uppercase text-white outline-none focus:border-[#e11d48]" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[8px] font-black uppercase text-white/30 ml-2">Data/Hora</label>
-                <input type="datetime-local" value={formEdit.data_hora} onChange={e => setFormEdit({...formEdit, data_hora: e.target.value})}
-                  className="w-full bg-white/5 border border-white/10 h-14 rounded-2xl px-5 text-[11px] font-bold uppercase text-white outline-none focus:border-[#e11d48]" />
-              </div>
-              <div className="pt-4 flex flex-col gap-3">
-                <button onClick={salvarEdicao} className="w-full bg-white text-black h-14 rounded-2xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all">Salvar Alterações</button>
-                <button onClick={() => setEditando(null)} className="w-full text-white/30 h-10 text-[9px] font-black uppercase tracking-widest">Cancelar</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* POP-UP: CONFIRMAR EXCLUSÃO DO AGENDAMENTO */}
-      {excluindo && (
-        <div className="fixed inset-0 bg-black/95 z-[9999] flex items-center justify-center p-6 backdrop-blur-md animate-in fade-in" onClick={() => setExcluindo(null)}>
-          <div className="w-full max-w-[300px] bg-[#0d0d0d] rounded-[40px] border border-white/10 p-8 shadow-2xl animate-in zoom-in-95 text-center" onClick={e => e.stopPropagation()}>
-            <div className="w-16 h-16 bg-[#e11d48]/10 rounded-full flex items-center justify-center mx-auto mb-6">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#e11d48" strokeWidth="3"><path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-            </div>
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 mb-2">Atenção</p>
-            <h3 className="text-sm font-black italic uppercase tracking-tighter mb-8 leading-tight">Você tem certeza que deseja excluir esse agendamento?</h3>
-            <div className="space-y-3">
-              <button onClick={confirmarExclusaoAgendamento} className="w-full bg-[#e11d48] text-white h-14 rounded-2xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all">Confirmar Exclusão</button>
-              <button onClick={() => setExcluindo(null)} className="w-full bg-white/5 text-white/30 h-12 rounded-2xl text-[9px] font-black uppercase tracking-widest">Cancelar</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* POP-UP: VOLTAR PARA VITRINE */}
-      {perguntarVitrine && (
-        <div className="fixed inset-0 bg-black/95 z-[9999] flex items-center justify-center p-6 backdrop-blur-md animate-in fade-in">
-          <div className="w-full max-w-[300px] bg-[#0d0d0d] rounded-[40px] border border-white/10 p-8 shadow-2xl animate-in zoom-in-95 text-center" onClick={e => e.stopPropagation()}>
-            <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-6">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-            </div>
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e11d48] mb-2">Vitrine</p>
-            <h3 className="text-sm font-black italic uppercase tracking-tighter mb-8 leading-tight">Deseja voltar a arte "{perguntarVitrine.titulo}" para a vitrine e catálogo?</h3>
-            <div className="space-y-3">
-              <button onClick={() => voltarArteParaVitrine(perguntarVitrine.id, 'sim')} className="w-full bg-white text-black h-14 rounded-2xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all">Sim, Voltar para Vitrine</button>
-              <button onClick={() => voltarArteParaVitrine(null, 'nao')} className="w-full bg-white/5 text-white/30 h-12 rounded-2xl text-[9px] font-black uppercase tracking-widest">Não, Manter Vendida</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* POPUP ARTE */}
-      {arteFocada && (() => {
-        const fotos = Array.isArray(arteFocada.imagem_url) ? arteFocada.imagem_url : [arteFocada.imagem_url];
-        return (
-          <div className="fixed inset-0 bg-black/95 z-[9999] flex items-center justify-center p-6 backdrop-blur-md animate-in fade-in" onClick={() => setArteFocada(null)}>
-            <div className="w-full max-w-[320px] bg-[#0d0d0d] rounded-[35px] border border-white/10 overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
-              <div className="relative aspect-[4/5] bg-black overflow-hidden">
-                <div ref={scrollRef} onScroll={handleScroll} className="flex overflow-x-auto snap-x snap-mandatory h-full no-scrollbar" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                  {fotos.map((url, i) => <div key={i} className="min-w-full h-full snap-center"><img src={url} className="w-full h-full object-cover" alt="" /></div>)}
+              {carregando ? (
+                <div className="py-20 text-center text-white/10 text-[10px] font-black uppercase tracking-widest">Sincronizando...</div>
+              ) : agendamentosExibidos.length === 0 ? (
+                <div className="py-20 text-center border border-dashed border-white/5 rounded-[40px]">
+                  <p className="text-[10px] font-black uppercase text-white/10 tracking-[0.2em] italic">Nenhum agendamento encontrado</p>
                 </div>
-                <button onClick={() => setArteFocada(null)} className="absolute top-4 right-4 w-8 h-8 bg-black/50 border border-white/20 rounded-full flex items-center justify-center text-white z-10">✕</button>
-                {fotos.length > 1 && <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5 px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-full border border-white/10">{fotos.map((_, i) => <div key={i} className={`h-1 rounded-full transition-all duration-300 ${i === indexFoto ? 'w-4 bg-white' : 'w-1 bg-white/30'}`} />)}</div>}
-              </div>
-              <div className="p-6 flex items-center justify-between">
-                <div className="min-w-0 pr-4">
-                  <span className="text-[#e11d48] text-[7px] font-black uppercase tracking-[0.4em] mb-1 block italic">Artwork</span>
-                  <h3 className="text-sm font-black italic uppercase tracking-tighter truncate">{arteFocada.titulo}</h3>
+              ) : (
+                agendamentosExibidos.map((ag) => (
+                  <div key={ag.id} onClick={() => setDetalheAgendamento(ag)} className="bg-[#0d0d0d] border border-white/5 rounded-[32px] p-6 flex items-center justify-between active:scale-[0.98] transition-all">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-black text-[#e11d48] uppercase italic mb-1">
+                        {new Date(ag.data_hora).toLocaleDateString('pt-BR', {day: '2-digit', month: 'short'})} • {new Date(ag.data_hora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      <h4 className="text-lg font-black uppercase italic tracking-tighter leading-none">{ag.cliente_nome}</h4>
+                    </div>
+                    <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><path d="m9 18 6-6-6-6"/></svg>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div key="detalhes" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 25 }} className="fixed inset-0 bg-[#050505] z-[50] p-6 pb-12 overflow-y-auto">
+             <header className="flex items-center justify-between mb-8 pt-8">
+              <button onClick={() => setDetalheAgendamento(null)} className="w-12 h-12 bg-white/5 border border-white/10 rounded-full flex items-center justify-center">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="m15 18-6-6 6-6"/></svg>
+              </button>
+              <button onClick={() => { setFormEdit({ cliente_nome: detalheAgendamento.cliente_nome, cliente_whatsapp: detalheAgendamento.cliente_whatsapp, data_hora: detalheAgendamento.data_hora.split('.')[0] }); setEditando(detalheAgendamento); }} className="text-[#e11d48] font-black text-[10px] uppercase italic tracking-widest">Editar</button>
+            </header>
+
+            <div className="max-w-md mx-auto">
+              <span className="text-[#e11d48] text-[10px] font-black uppercase italic tracking-[0.2em]">Cliente</span>
+              <h2 className="text-4xl font-black uppercase italic tracking-tighter mb-8 leading-none">{detalheAgendamento.cliente_nome}</h2>
+
+              {detalheAgendamento.artes?.imagem_url && (
+                <div className="mb-8">
+                   <div className="relative aspect-[4/5] rounded-[45px] overflow-hidden border border-white/10 bg-[#0a0a0a]">
+                      <img src={detalheAgendamento.artes.imagem_url} alt="Referência" className="w-full h-full object-cover" />
+                      <button 
+                        onClick={() => baixarImagem(detalheAgendamento.artes.imagem_url, `tattoo-${detalheAgendamento.cliente_nome}`)}
+                        className="absolute top-6 right-6 w-12 h-12 bg-black/60 backdrop-blur-md rounded-full flex items-center justify-center border border-white/10 active:scale-90 transition-all z-10"
+                      >
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                      </button>
+                   </div>
                 </div>
-                <button onClick={() => baixarImagem(fotos[indexFoto], arteFocada.titulo)} className="flex items-center gap-2 bg-white text-black px-4 py-2.5 rounded-xl active:scale-90 transition-all shrink-0">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                  <span className="text-[9px] font-black uppercase tracking-widest">Baixar</span>
+              )}
+
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <a href={`https://wa.me/${detalheAgendamento.cliente_whatsapp}`} target="_blank" rel="noreferrer" className="bg-white/5 border border-white/10 h-16 rounded-[22px] flex items-center justify-center gap-2 active:scale-95 transition-all">
+                  <span className="text-[10px] font-black uppercase italic tracking-widest">WhatsApp</span>
+                </a>
+                <button onClick={() => setExcluindo(detalheAgendamento)} className="bg-white/5 border border-white/10 h-16 rounded-[22px] flex items-center justify-center active:scale-95 transition-all text-white/30">
+                  <span className="text-[10px] font-black uppercase italic tracking-widest">Excluir</span>
                 </button>
               </div>
+
+              <button onClick={() => { setFinalizando(detalheAgendamento); setValorManual(""); }} className="w-full bg-[#e11d48] text-white h-20 rounded-[35px] font-black uppercase text-xs active:scale-95 transition-all italic shadow-2xl shadow-rose-500/20">Finalizar Sessão</button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {(finalizando || excluindo || editando) && (
+          <div className="fixed inset-0 bg-black/95 z-[11000] flex items-center justify-center p-8 backdrop-blur-xl">
+            <div className="w-full max-w-xs bg-[#0a0a0a] rounded-[45px] border border-white/10 p-8 shadow-2xl text-center">
+              {finalizando && (
+                <>
+                  <div className="w-16 h-16 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-6 text-green-500">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6 9 17l-5-5"/></svg>
+                  </div>
+                  <h2 className="text-sm font-black uppercase mb-6 italic tracking-tighter text-white">Lançar ganho?</h2>
+                  <input type="text" value={valorManual} onChange={(e) => setValorManual(e.target.value)} placeholder={`R$ ${finalizando.artes?.preco || '0,00'}`} className="w-full bg-white/5 border border-white/10 h-14 rounded-2xl mb-4 text-center text-white font-black" />
+                  <button onClick={confirmarFinalizacao} className="w-full bg-green-600 text-white h-14 rounded-[24px] text-[10px] font-black uppercase active:scale-95 italic">CONFIRMAR</button>
+                </>
+              )}
+              {excluindo && (
+                <>
+                  <div className="w-16 h-16 bg-[#e11d48]/10 rounded-full flex items-center justify-center mx-auto mb-6 text-[#e11d48]">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                  </div>
+                  <p className="text-[10px] font-black uppercase text-[#e11d48] mb-2">Você tem certeza?</p>
+                  <h2 className="text-sm font-black uppercase mb-8 italic text-white">Deseja excluir esse agendamento?</h2>
+                  <button onClick={confirmarExclusaoAgendamento} className="w-full bg-[#e11d48] text-white h-14 rounded-[24px] text-[10px] font-black uppercase active:scale-95 italic">SIM, EXCLUIR</button>
+                </>
+              )}
+              {editando && (
+                <div className="text-left space-y-4">
+                  <h2 className="text-lg font-black uppercase mb-4 italic text-center">Editar</h2>
+                  <input type="text" value={formEdit.cliente_nome} onChange={e => setFormEdit({...formEdit, cliente_nome: e.target.value})} className="w-full bg-white/5 border border-white/10 h-14 rounded-2xl px-4 text-xs font-bold uppercase text-white" placeholder="Nome" />
+                  <input type="datetime-local" value={formEdit.data_hora} onChange={e => setFormEdit({...formEdit, data_hora: e.target.value})} className="w-full bg-white/5 border border-white/10 h-14 rounded-2xl px-4 text-xs font-bold uppercase text-white" />
+                  <button onClick={salvarEdicao} className="w-full bg-white text-black h-14 rounded-2xl text-[10px] font-black uppercase italic">SALVAR</button>
+                </div>
+              )}
+              <button onClick={() => { setFinalizando(null); setExcluindo(null); setEditando(null); }} className="text-[10px] font-black text-white/20 uppercase tracking-[0.3em] py-6 italic w-full">CANCELAR</button>
             </div>
           </div>
-        );
-      })()}
-
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -52,16 +52,11 @@ export default function ModalUpload({ aberto, fechar, aoSucesso, tatuadorId, set
 
       if (error) throw error;
       
-      // LIMPEZA E FECHAMENTO AUTOMÁTICO
-      // Removemos o estado interno de sucesso para evitar o popup duplicado
       setImagens([]);
       setTitulo('');
       setPreco('');
       
-      // 1. Fecha o modal de upload imediatamente
       fechar(); 
-      
-      // 2. Notifica a Dashboard para mostrar o popup de "Arte Publicada"
       if (aoSucesso) aoSucesso(); 
 
     } catch (err) { 
@@ -88,7 +83,7 @@ export default function ModalUpload({ aberto, fechar, aoSucesso, tatuadorId, set
 
       {/* HEADER */}
       <div className="flex justify-between items-center mb-8 pt-2 shrink-0">
-        <button onClick={fecharTudo} className="text-white/40 font-black uppercase text-[9px] tracking-widest active:scale-90 transition-all">
+        <button onClick={fecharTudo} className="text-white/40 font-black uppercase text-[9px] tracking-widest active:scale-90 transition-all p-2">
           Cancelar
         </button>
         <div className="flex flex-col items-center">
@@ -124,7 +119,7 @@ export default function ModalUpload({ aberto, fechar, aoSucesso, tatuadorId, set
         )}
       </div>
 
-      {/* FORMULÁRIO */}
+      {/* FORMULÁRIO - AJUSTADO PARA EVITAR ZOOM NO MOBILE */}
       <div className="mt-8 mb-6 shrink-0 w-full max-w-xs mx-auto space-y-8">
         <div className="space-y-6">
           <input 
@@ -132,7 +127,7 @@ export default function ModalUpload({ aberto, fechar, aoSucesso, tatuadorId, set
             placeholder="TÍTULO DO PROJETO" 
             value={titulo} 
             onChange={(e) => setTitulo(e.target.value)} 
-            className="w-full bg-transparent border-b border-white/10 py-3 outline-none text-[12px] font-black text-white text-center tracking-[0.2em] uppercase placeholder:text-white/10 focus:border-[#e11d48] transition-colors italic" 
+            className="w-full bg-transparent border-b border-white/10 py-4 outline-none text-[16px] font-black text-white text-center tracking-[0.1em] uppercase placeholder:text-white/10 focus:border-[#e11d48] transition-colors italic" 
           />
           
           <div className="relative">
@@ -141,9 +136,9 @@ export default function ModalUpload({ aberto, fechar, aoSucesso, tatuadorId, set
               placeholder="R$ 0,00 (OPCIONAL)" 
               value={preco} 
               onChange={manipularPreco} 
-              className="w-full bg-transparent border-b border-white/10 py-3 outline-none text-[12px] font-black text-[#e11d48] text-center tracking-[0.2em] uppercase placeholder:text-white/10 focus:border-[#e11d48] transition-colors italic" 
+              className="w-full bg-transparent border-b border-white/10 py-4 outline-none text-[16px] font-black text-[#e11d48] text-center tracking-[0.1em] uppercase placeholder:text-white/10 focus:border-[#e11d48] transition-colors italic" 
             />
-            <span className="absolute -bottom-5 left-0 right-0 text-center text-[7px] text-white/20 tracking-widest uppercase italic font-bold">Vazio = Sob Consulta</span>
+            <span className="absolute -bottom-6 left-0 right-0 text-center text-[7px] text-white/20 tracking-widest uppercase italic font-bold">Vazio = Sob Consulta</span>
           </div>
         </div>
         
